@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const {
+  createReportText
+} = require('./services/reportText');
 
 const http = require('http');
 const net = require('net');
