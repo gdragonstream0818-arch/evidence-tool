@@ -7,9 +7,6 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const {
-  createReportText
-} = require('./services/reportText');
 
 const http = require('http');
 const net = require('net');
@@ -1338,8 +1335,8 @@ app.post(
           ),
 
         content:
-  truncate(
-    body.content ||
+          truncate(
+            body.content ||
 `
 온라인 권익 침해 게시물 증거자료입니다.
 
@@ -1372,8 +1369,8 @@ ${evidence.capturedAt || ''}
 증거파일 HASH(SHA256):
 ${evidence.hash || ''}
 `,
-    1000
-  ),
+            1000
+          ),
 
         channel:
           body.channel ||
@@ -1393,44 +1390,8 @@ ${evidence.hash || ''}
           ),
 
         url:
-  evidence.url,
-
-
-capturedAt:
-  evidence.capturedAt,
-
-
-hash:
-  evidence.hash,
-
-
-reportText:
-  createReportText({
-
-    channel:
-      evidence.channel,
-
-    title:
-      evidence.title,
-
-    author:
-      evidence.author,
-
-    postDate:
-      report.postDate,
-
-    url:
-      evidence.url,
-
-    capturedAt:
-      evidence.capturedAt,
-
-    hash:
-      evidence.hash
-
-  })
-
-};
+          evidence.url
+      };
 
 
       browser =
