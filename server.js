@@ -284,6 +284,7 @@ async function launchHeadlessBrowser() {
       '--disable-gpu',
 
       '--window-size=1280,900'
+      '--disable-blink-features=AutomationControlled',
     ]
   });
 }
@@ -490,6 +491,35 @@ app.post(
 
 
       await page.setViewport({
+        const page =
+  await browser.newPage();
+
+
+// 여기 추가
+await page.evaluateOnNewDocument(() => {
+
+  Object.defineProperty(
+    navigator,
+    'webdriver',
+    {
+      get: () => undefined
+    }
+  );
+
+});
+
+
+await page.setUserAgent(
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36'
+);
+
+
+await page.setExtraHTTPHeaders({
+
+  'Accept-Language':
+    'ko-KR,ko;q=0.9,en-US;q=0.8'
+
+});
 
         width:
           1280,
