@@ -1362,8 +1362,44 @@ app.post(
           ),
 
         url:
-          evidence.url
-      };
+  evidence.url,
+
+
+capturedAt:
+  evidence.capturedAt,
+
+
+hash:
+  evidence.hash,
+
+
+reportText:
+  createReportText({
+
+    channel:
+      evidence.channel,
+
+    title:
+      evidence.title,
+
+    author:
+      evidence.author,
+
+    postDate:
+      report.postDate,
+
+    url:
+      evidence.url,
+
+    capturedAt:
+      evidence.capturedAt,
+
+    hash:
+      evidence.hash
+
+  })
+
+};
 
 
       browser =
