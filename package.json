@@ -1,0 +1,14 @@
+{
+  "name": "evidence-tool",
+  "version": "0.1.0",
+  "description": "악플/명예훼손 신고용 증거 수집 자동화 MVP (일반 커뮤니티 대상)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "puppeteer": "^22.15.0",
+    "cors": "^2.8.5"
+  }
+}
