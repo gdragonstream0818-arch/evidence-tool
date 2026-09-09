@@ -1338,11 +1338,42 @@ app.post(
           ),
 
         content:
-          truncate(
-            body.content ||
-            '아티스트에 대한 권익 침해가 의심되는 게시물입니다. 원문 전체 내용과 댓글을 PDF 증거자료로 첨부합니다.',
-            1000
-          ),
+  truncate(
+    body.content ||
+`
+온라인 권익 침해 게시물 증거자료입니다.
+
+[게시물 정보]
+
+플랫폼:
+${evidence.channel || ''}
+
+제목:
+${evidence.title || ''}
+
+작성자:
+${evidence.author || ''}
+
+게시일:
+${evidence.date || ''}
+
+원본 URL:
+${evidence.url || ''}
+
+
+[증거 보존 정보]
+
+수집일시:
+${evidence.capturedAt || ''}
+
+첨부 PDF:
+증거자료 첨부
+
+증거파일 HASH(SHA256):
+${evidence.hash || ''}
+`,
+    1000
+  ),
 
         channel:
           body.channel ||
