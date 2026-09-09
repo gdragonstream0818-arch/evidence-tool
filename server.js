@@ -458,7 +458,7 @@ app.post(
 
 
       page.setDefaultNavigationTimeout(
-        30000
+        60000
       );
 
 
@@ -471,7 +471,7 @@ app.post(
             'domcontentloaded',
 
           timeout:
-            30000
+            60000
 
         }
       );
