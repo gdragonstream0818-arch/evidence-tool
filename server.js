@@ -1,758 +1,449 @@
 const express = require('express');
 const cors = require('cors');
-const puppeteer = require('puppeteer');
+
+const puppeteer = require('puppeteer-core');
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const http = require('http');
+const net = require('net');
+
+const WebSocket = require('ws');
+
+
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+const server = http.createServer(app);
 
-const TEMP_DIR = path.join(os.tmpdir(), 'evidence-tool');
-const EVIDENCE_TTL_MS = 60 * 60 * 1000;
 
-fs.mkdirSync(TEMP_DIR, {
-  recursive: true,
-});
+const PORT =
+  process.env.PORT ||
+  10000;
 
-const evidenceStore = new Map();
-const reportSessions = new Map();
+
+const CHROME_BIN =
+  process.env.CHROME_BIN ||
+  '/usr/bin/chromium';
+
+
+const DISPLAY =
+  process.env.DISPLAY ||
+  ':99';
+
 
 const GALAXY_URL =
   'https://protect.galaxyuniverse.ai/rights-violations/new';
 
-const KOREAN_FONT_LINK =
-  'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap';
 
+const TEMP_DIR =
+  path.join(
+    os.tmpdir(),
+    'evidence-tool'
+  );
+
+
+fs.mkdirSync(
+  TEMP_DIR,
+  {
+    recursive: true
+  }
+);
+
+
+app.use(
+  cors()
+);
+
+
+app.use(
+  express.json({
+    limit: '2mb'
+  })
+);
+
+
+app.use(
+  express.static(
+    path.join(
+      __dirname,
+      'public'
+    )
+  )
+);
+
+
+// noVNC 파일 제공
+app.use(
+  '/novnc',
+  express.static(
+    '/usr/share/novnc'
+  )
+);
+
+
+const evidenceStore =
+  new Map();
+
+
+const reportSessions =
+  new Map();
+
+
+const EVIDENCE_TTL =
+  60 * 60 * 1000;
+
+
+// ------------------------------------------------
+// 사이트 설정
+// ------------------------------------------------
 
 const SITE_PROFILES = {
+
   'gall.dcinside.com': {
-    title: '.title_subject',
-    author: '.gall_writer .nickname',
-    date: '.gall_date',
+
+    title:
+      '.title_subject',
+
+    author:
+      '.gall_writer .nickname',
+
+    date:
+      '.gall_date',
+
+    channel:
+      'dcinside'
   },
 
-  'www.fmkorea.com': {
-    title: '.np_18px, .title',
-    author: '.member_plate, .top_content .author',
-    date: '.date.m_no',
-  },
 
   'fmkorea.com': {
-    title: '.np_18px, .title',
-    author: '.member_plate, .top_content .author',
-    date: '.date.m_no',
+
+    title:
+      '.np_18px, .title',
+
+    author:
+      '.member_plate, .top_content .author',
+
+    date:
+      '.date.m_no',
+
+    channel:
+      'fmkorea'
   },
+
+
+  'www.fmkorea.com': {
+
+    title:
+      '.np_18px, .title',
+
+    author:
+      '.member_plate, .top_content .author',
+
+    date:
+      '.date.m_no',
+
+    channel:
+      'fmkorea'
+  }
+
 };
 
 
-// ----------------------------------------------------
+// ------------------------------------------------
 // 공통 함수
-// ----------------------------------------------------
+// ------------------------------------------------
 
-function createEvidenceId() {
-  return crypto.randomUUID();
+function randomId() {
+
+  return crypto
+    .randomUUID();
 }
 
 
 function cleanText(value) {
-  if (!value) return '';
 
-  return value
-    .replace(/\s+/g, ' ')
+  return String(
+    value || ''
+  )
+    .replace(
+      /\s+/g,
+      ' '
+    )
     .trim();
 }
 
 
-function truncate(value, max) {
-  if (!value) return '';
+function truncate(
+  value,
+  length
+) {
 
-  return value.length > max
-    ? value.slice(0, max)
-    : value;
+  return cleanText(
+    value
+  ).slice(
+    0,
+    length
+  );
 }
 
 
-function normalizePostDate(value) {
+function getProfile(urlString) {
+
+  try {
+
+    const url =
+      new URL(
+        urlString
+      );
+
+    return (
+      SITE_PROFILES[
+        url.hostname
+      ] ||
+      null
+    );
+
+  } catch {
+
+    return null;
+  }
+}
+
+
+function detectChannel(
+  urlString
+) {
+
+  const profile =
+    getProfile(
+      urlString
+    );
+
+  return (
+    profile?.channel ||
+    '기타'
+  );
+}
+
+
+function normalizeDate(
+  value
+) {
+
   if (!value) {
     return '';
   }
 
-  const match = value.match(
-    /(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/
-  );
+
+  const match =
+    String(
+      value
+    ).match(
+      /(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/
+    );
+
 
   if (!match) {
     return '';
   }
 
-  const year = match[1];
-  const month = match[2].padStart(2, '0');
-  const day = match[3].padStart(2, '0');
 
-  return `${year}-${month}-${day}`;
+  return (
+    `${match[1]}-` +
+    `${match[2].padStart(2, '0')}-` +
+    `${match[3].padStart(2, '0')}`
+  );
 }
 
 
-function detectChannel(url) {
-  try {
-    const host =
-      new URL(url).hostname.toLowerCase();
+// ------------------------------------------------
+// Chrome 실행
+// ------------------------------------------------
 
-    if (host.includes('dcinside')) {
-      return 'dcinside';
-    }
+async function launchHeadlessBrowser() {
 
-    if (host.includes('fmkorea')) {
-      return 'fmkorea';
-    }
-
-    if (host.includes('theqoo')) {
-      return 'Theqoo';
-    }
-
-    if (host.includes('instiz')) {
-      return 'instiz';
-    }
-
-    if (host.includes('naver')) {
-      return 'Naver';
-    }
-
-    if (host.includes('nate')) {
-      return 'Nate';
-    }
-
-    if (host.includes('daum')) {
-      return 'Daum Cafe';
-    }
-
-    if (host.includes('instagram')) {
-      return 'Instagram';
-    }
-
-    if (host.includes('facebook')) {
-      return 'Facebook';
-    }
-
-    if (
-      host.includes('twitter') ||
-      host === 'x.com' ||
-      host.endsWith('.x.com')
-    ) {
-      return 'X';
-    }
-
-    if (host.includes('youtube')) {
-      return 'YouTube';
-    }
-
-    if (host.includes('tiktok')) {
-      return 'TikTok';
-    }
-
-    if (host.includes('threads')) {
-      return 'Threads';
-    }
-
-    return '기타';
-
-  } catch {
-    return '기타';
-  }
-}
-
-
-async function launchBrowser() {
   return puppeteer.launch({
-    headless: true,
+
+    executablePath:
+      CHROME_BIN,
+
+    headless:
+      true,
 
     args: [
+
       '--no-sandbox',
+
       '--disable-setuid-sandbox',
+
       '--disable-dev-shm-usage',
+
       '--disable-gpu',
-      '--no-zygote',
+
+      '--window-size=1280,900'
+    ]
+  });
+}
+
+
+async function launchVisibleBrowser() {
+
+  return puppeteer.launch({
+
+    executablePath:
+      CHROME_BIN,
+
+    headless:
+      false,
+
+    env: {
+
+      ...process.env,
+
+      DISPLAY
+    },
+
+    args: [
+
+      '--no-sandbox',
+
+      '--disable-setuid-sandbox',
+
+      '--disable-dev-shm-usage',
+
+      '--disable-gpu',
+
+      '--window-size=1280,900',
+
+      '--start-maximized'
     ],
+
+    defaultViewport:
+      null
   });
 }
 
 
-async function autoScrollToBottom(page) {
-  await page.evaluate(async () => {
+// ------------------------------------------------
+// 페이지 자동 스크롤
+// ------------------------------------------------
 
-    await new Promise((resolve) => {
+async function autoScroll(
+  page
+) {
 
-      let totalHeight = 0;
-      let count = 0;
+  await page.evaluate(
+    async () => {
 
-      const distance = 800;
+      await new Promise(
+        resolve => {
 
-      const timer = setInterval(() => {
+          let count =
+            0;
 
-        window.scrollBy(0, distance);
+          const timer =
+            setInterval(
+              () => {
 
-        totalHeight += distance;
-        count += 1;
+                window.scrollBy(
+                  0,
+                  700
+                );
 
-        const scrollHeight =
-          document.body.scrollHeight;
+                count++;
 
-        if (
-          totalHeight >= scrollHeight ||
-          count >= 30
-        ) {
 
-          clearInterval(timer);
+                if (
+                  count >= 30 ||
+                  (
+                    window.innerHeight +
+                    window.scrollY
+                  ) >=
+                  document.body.scrollHeight
+                ) {
 
-          window.scrollTo(0, 0);
+                  clearInterval(
+                    timer
+                  );
 
-          resolve();
+                  resolve();
+                }
+
+              },
+              150
+            );
         }
+      );
+    }
+  );
 
-      }, 150);
 
-    });
-
-  });
+  await new Promise(
+    resolve =>
+      setTimeout(
+        resolve,
+        600
+      )
+  );
 }
 
 
-async function getText(page, selector) {
+// ------------------------------------------------
+// 텍스트 가져오기
+// ------------------------------------------------
+
+async function getText(
+  page,
+  selector
+) {
+
   if (!selector) {
     return '';
   }
 
+
   try {
+
     return await page.$eval(
       selector,
-      el => el.textContent.trim()
+      element =>
+        (
+          element.innerText ||
+          element.textContent ||
+          ''
+        ).trim()
     );
+
   } catch {
+
     return '';
   }
 }
 
 
-// ----------------------------------------------------
-// Galaxy 폼 자동작성용
-// ----------------------------------------------------
-
-async function setInputByPlaceholder(
-  page,
-  placeholderWords,
-  value
-) {
-
-  if (!value) {
-    return false;
-  }
-
-  return page.evaluate(
-    ({ placeholderWords, value }) => {
-
-      const inputs =
-        Array.from(
-          document.querySelectorAll(
-            'input, textarea'
-          )
-        );
-
-      const el = inputs.find(input => {
-
-        const placeholder =
-          (
-            input.getAttribute(
-              'placeholder'
-            ) || ''
-          ).toLowerCase();
-
-        return placeholderWords.some(word =>
-          placeholder.includes(
-            word.toLowerCase()
-          )
-        );
-
-      });
-
-      if (!el) {
-        return false;
-      }
-
-      const prototype =
-        el.tagName === 'TEXTAREA'
-          ? HTMLTextAreaElement.prototype
-          : HTMLInputElement.prototype;
-
-      const descriptor =
-        Object.getOwnPropertyDescriptor(
-          prototype,
-          'value'
-        );
-
-      if (
-        descriptor &&
-        descriptor.set
-      ) {
-
-        descriptor.set.call(
-          el,
-          value
-        );
-
-      } else {
-
-        el.value = value;
-      }
-
-      el.dispatchEvent(
-        new Event(
-          'input',
-          {
-            bubbles: true
-          }
-        )
-      );
-
-      el.dispatchEvent(
-        new Event(
-          'change',
-          {
-            bubbles: true
-          }
-        )
-      );
-
-      return true;
-
-    },
-    {
-      placeholderWords,
-      value,
-    }
-  );
-}
-
-
-async function setFirstTextarea(
-  page,
-  value
-) {
-
-  return page.evaluate(value => {
-
-    const el =
-      document.querySelector(
-        'textarea'
-      );
-
-    if (!el) {
-      return false;
-    }
-
-    const descriptor =
-      Object.getOwnPropertyDescriptor(
-        HTMLTextAreaElement.prototype,
-        'value'
-      );
-
-    if (
-      descriptor &&
-      descriptor.set
-    ) {
-
-      descriptor.set.call(
-        el,
-        value
-      );
-
-    } else {
-
-      el.value = value;
-    }
-
-    el.dispatchEvent(
-      new Event(
-        'input',
-        {
-          bubbles: true
-        }
-      )
-    );
-
-    el.dispatchEvent(
-      new Event(
-        'change',
-        {
-          bubbles: true
-        }
-      )
-    );
-
-    return true;
-
-  }, value);
-}
-
-
-async function setDateInput(
-  page,
-  value
-) {
-
-  if (!value) {
-    return false;
-  }
-
-  return page.evaluate(value => {
-
-    const inputs =
-      Array.from(
-        document.querySelectorAll(
-          'input'
-        )
-      );
-
-    const el =
-      inputs.find(input =>
-        input.type === 'date'
-      ) ||
-      inputs.find(input => {
-
-        const p =
-          (
-            input.placeholder || ''
-          ).toLowerCase();
-
-        return (
-          p.includes('날짜') ||
-          p.includes('date')
-        );
-
-      });
-
-    if (!el) {
-      return false;
-    }
-
-    const descriptor =
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value'
-      );
-
-    if (
-      descriptor &&
-      descriptor.set
-    ) {
-
-      descriptor.set.call(
-        el,
-        value
-      );
-
-    } else {
-
-      el.value = value;
-    }
-
-    el.dispatchEvent(
-      new Event(
-        'input',
-        {
-          bubbles: true
-        }
-      )
-    );
-
-    el.dispatchEvent(
-      new Event(
-        'change',
-        {
-          bubbles: true
-        }
-      )
-    );
-
-    return true;
-
-  }, value);
-}
-
-
-async function selectOptionByText(
-  page,
-  patterns
-) {
-
-  return page.evaluate(
-    patterns => {
-
-      const selects =
-        Array.from(
-          document.querySelectorAll(
-            'select'
-          )
-        );
-
-      for (
-        const select of selects
-      ) {
-
-        const options =
-          Array.from(
-            select.options
-          );
-
-        const option =
-          options.find(opt => {
-
-            const text =
-              (
-                opt.textContent || ''
-              )
-                .trim()
-                .toLowerCase();
-
-            return patterns.some(pattern =>
-              text.includes(
-                pattern.toLowerCase()
-              )
-            );
-
-          });
-
-        if (!option) {
-          continue;
-        }
-
-        select.value =
-          option.value;
-
-        select.dispatchEvent(
-          new Event(
-            'input',
-            {
-              bubbles: true
-            }
-          )
-        );
-
-        select.dispatchEvent(
-          new Event(
-            'change',
-            {
-              bubbles: true
-            }
-          )
-        );
-
-        return {
-          success: true,
-          text:
-            option.textContent.trim()
-        };
-      }
-
-      return {
-        success: false
-      };
-
-    },
-    patterns
-  );
-}
-
-
-// custom combobox 대응
-async function clickCustomOption(
-  page,
-  patterns
-) {
-
-  for (
-    let i = 0;
-    i < patterns.length;
-    i++
-  ) {
-
-    const pattern =
-      patterns[i];
-
-    try {
-
-      const result =
-        await page.evaluate(
-          pattern => {
-
-            const els =
-              Array.from(
-                document.querySelectorAll(
-                  'button, [role="option"], [role="combobox"], div, li'
-                )
-              );
-
-            const el =
-              els.find(node => {
-
-                const text =
-                  (
-                    node.textContent || ''
-                  ).trim();
-
-                return (
-                  text === pattern ||
-                  text.includes(pattern)
-                );
-
-              });
-
-            if (!el) {
-              return false;
-            }
-
-            el.click();
-
-            return true;
-
-          },
-          pattern
-        );
-
-      if (result) {
-        return true;
-      }
-
-    } catch {
-    }
-  }
-
-  return false;
-}
-
-
-async function checkTruthCheckbox(page) {
-
-  return page.evaluate(() => {
-
-    const boxes =
-      Array.from(
-        document.querySelectorAll(
-          'input[type="checkbox"]'
-        )
-      );
-
-    if (!boxes.length) {
-      return false;
-    }
-
-    const checkbox =
-      boxes[boxes.length - 1];
-
-    if (!checkbox.checked) {
-
-      checkbox.click();
-
-      checkbox.dispatchEvent(
-        new Event(
-          'change',
-          {
-            bubbles: true
-          }
-        )
-      );
-    }
-
-    return true;
-  });
-}
-
-
-async function attachPdf(
-  page,
-  filePath
-) {
-
-  const inputs =
-    await page.$$(
-      'input[type="file"]'
-    );
-
-  if (!inputs.length) {
-    return false;
-  }
-
-  await inputs[0].uploadFile(
-    filePath
-  );
-
-  await new Promise(
-    resolve =>
-      setTimeout(resolve, 1000)
-  );
-
-  return true;
-}
-
-
-async function findAndClickSubmit(page) {
-
-  const buttons =
-    await page.$$('button');
-
-  for (
-    const button of buttons
-  ) {
-
-    try {
-
-      const text =
-        await button.evaluate(
-          el =>
-            (
-              el.textContent || ''
-            ).trim()
-        );
-
-      if (
-        text === '등록하기' ||
-        text === 'Submit' ||
-        text.includes('등록하기')
-      ) {
-
-        await button.click();
-
-        return true;
-      }
-
-    } catch {
-    }
-  }
-
-  return false;
-}
-
-
-// ----------------------------------------------------
-// 1. 증거 PDF 생성
-// ----------------------------------------------------
+// ------------------------------------------------
+// 증거 PDF 생성
+// ------------------------------------------------
 
 app.post(
   '/api/capture',
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
 
-    let browser = null;
+    let browser;
+
 
     try {
 
       const {
         url
-      } = req.body;
+      } =
+        req.body;
 
 
       if (!url) {
@@ -766,57 +457,60 @@ app.post(
       }
 
 
-      let parsed;
-
-      try {
-
-        parsed =
-          new URL(url);
-
-      } catch {
-
-        return res
-          .status(400)
-          .json({
-            error:
-              '올바른 URL이 아닙니다.'
-          });
-      }
+      const parsed =
+        new URL(
+          url
+        );
 
 
       if (
-        parsed.protocol !== 'http:' &&
-        parsed.protocol !== 'https:'
+        ![
+          'http:',
+          'https:'
+        ].includes(
+          parsed.protocol
+        )
       ) {
 
         return res
           .status(400)
           .json({
             error:
-              'http 또는 https URL만 가능합니다.'
+              '지원하지 않는 URL입니다.'
           });
       }
 
 
       browser =
-        await launchBrowser();
+        await launchHeadlessBrowser();
+
 
       const page =
         await browser.newPage();
 
 
       await page.setViewport({
-        width: 1440,
-        height: 1200,
-        deviceScaleFactor: 1,
+
+        width:
+          1280,
+
+        height:
+          900,
+
+        deviceScaleFactor:
+          1
       });
 
 
       await page.goto(
         url,
         {
-          waitUntil: 'networkidle2',
-          timeout: 60000,
+
+          waitUntil:
+            'networkidle2',
+
+          timeout:
+            60000
         }
       );
 
@@ -827,22 +521,28 @@ app.post(
 
       const hash =
         crypto
-          .createHash('sha256')
-          .update(html)
-          .digest('hex');
+          .createHash(
+            'sha256'
+          )
+          .update(
+            html
+          )
+          .digest(
+            'hex'
+          );
 
 
       const profile =
-        SITE_PROFILES[
-          parsed.hostname
-        ] || {};
+        getProfile(
+          url
+        );
 
 
       const title =
         cleanText(
           await getText(
             page,
-            profile.title
+            profile?.title
           )
         );
 
@@ -851,7 +551,7 @@ app.post(
         cleanText(
           await getText(
             page,
-            profile.author
+            profile?.author
           )
         );
 
@@ -860,135 +560,125 @@ app.post(
         cleanText(
           await getText(
             page,
-            profile.date
+            profile?.date
           )
         );
 
 
-      await autoScrollToBottom(
+      await autoScroll(
         page
       );
 
 
-      try {
+      await page.evaluate(
+        () => {
 
-        await page.addStyleTag({
-          url:
-            KOREAN_FONT_LINK,
-        });
-
-
-        await page.addStyleTag({
-          content: `
-            * {
-              font-family:
-                'Noto Sans KR',
-                'Malgun Gothic',
-                'Apple SD Gothic Neo',
-                sans-serif !important;
-            }
-          `,
-        });
-
-
-        await page.evaluate(
-          timeoutMs =>
-            Promise.race([
-              document.fonts.ready,
-
-              new Promise(resolve =>
-                setTimeout(
-                  resolve,
-                  timeoutMs
-                )
-              ),
-            ]),
-          5000
-        );
-
-      } catch {
-      }
-
-
-      const evidenceId =
-        createEvidenceId();
-
-
-      const filePath =
-        path.join(
-          TEMP_DIR,
-          `${evidenceId}.pdf`
-        );
-
-
-      const pdfBuffer =
-        await page.pdf({
-
-          format: 'A4',
-
-          printBackground: true,
-
-          displayHeaderFooter:
-            true,
-
-          headerTemplate: `
-            <div style="
-              font-size:9px;
-              width:100%;
-              padding:0 10mm;
-              display:flex;
-              justify-content:space-between;
-              color:#555;
-            ">
-              <span class="title"></span>
-              <span class="date"></span>
-            </div>
-          `,
-
-          footerTemplate: `
-            <div style="
-              font-size:9px;
-              width:100%;
-              padding:0 10mm;
-              display:flex;
-              justify-content:space-between;
-              color:#555;
-            ">
-              <span class="url"></span>
-
-              <span>
-                <span class="pageNumber"></span>
-                /
-                <span class="totalPages"></span>
-              </span>
-            </div>
-          `,
-
-          margin: {
-            top: '20mm',
-            bottom: '20mm',
-            left: '10mm',
-            right: '10mm',
-          },
-        });
-
-
-      fs.writeFileSync(
-        filePath,
-        pdfBuffer
+          window.scrollTo(
+            0,
+            0
+          );
+        }
       );
 
 
-      const capturedAt =
-        new Date().toISOString();
+      await new Promise(
+        resolve =>
+          setTimeout(
+            resolve,
+            500
+          )
+      );
+
+
+      const id =
+        randomId();
+
+
+      const pdfPath =
+        path.join(
+          TEMP_DIR,
+          `${id}.pdf`
+        );
+
+
+      await page.pdf({
+
+        path:
+          pdfPath,
+
+        format:
+          'A4',
+
+        printBackground:
+          true,
+
+        displayHeaderFooter:
+          true,
+
+        headerTemplate: `
+
+          <div
+            style="
+              font-size:8px;
+              width:100%;
+              padding:0 10mm;
+              color:#555;
+            "
+          >
+
+            <span class="title"></span>
+
+          </div>
+
+        `,
+
+        footerTemplate: `
+
+          <div
+            style="
+              font-size:8px;
+              width:100%;
+              padding:0 10mm;
+              display:flex;
+              justify-content:space-between;
+              color:#555;
+            "
+          >
+
+            <span class="url"></span>
+
+            <span>
+              <span class="pageNumber"></span>
+              /
+              <span class="totalPages"></span>
+            </span>
+
+          </div>
+
+        `,
+
+        margin: {
+
+          top:
+            '18mm',
+
+          bottom:
+            '18mm',
+
+          left:
+            '10mm',
+
+          right:
+            '10mm'
+        }
+      });
 
 
       const evidence = {
 
-        id:
-          evidenceId,
+        id,
 
-        filePath,
+        pdfPath,
 
         url,
 
@@ -998,90 +688,108 @@ app.post(
 
         date,
 
-        capturedAt,
+        channel:
+          detectChannel(
+            url
+          ),
 
         hash,
+
+        capturedAt:
+          new Date()
+            .toISOString(),
 
         confirmed:
           false,
 
-        createdTimestamp:
-          Date.now(),
+        createdAt:
+          Date.now()
       };
 
 
       evidenceStore.set(
-        evidenceId,
+        id,
         evidence
       );
 
 
-      await browser.close();
-
-      browser = null;
-
-
       return res.json({
 
-        success: true,
+        success:
+          true,
 
-        evidenceId,
+        evidenceId:
+          id,
 
         previewUrl:
-          `/api/evidence/${evidenceId}/pdf`,
+          `/api/evidence/${id}/pdf`,
 
         downloadUrl:
-          `/api/evidence/${evidenceId}/download`,
+          `/api/evidence/${id}/download`,
 
         metadata: {
+
           url,
+
           title,
+
           author,
+
           date,
-          capturedAt,
-          hash,
+
           channel:
-            detectChannel(url),
-        },
+            evidence.channel,
+
+          capturedAt:
+            evidence.capturedAt,
+
+          hash
+        }
       });
 
 
     } catch (error) {
 
       console.error(
-        'CAPTURE ERROR:',
         error
       );
-
-
-      if (browser) {
-
-        try {
-          await browser.close();
-        } catch {
-        }
-      }
 
 
       return res
         .status(500)
         .json({
+
           error:
             error.message ||
-            'PDF 생성 중 오류가 발생했습니다.'
+            '증거 수집 중 오류가 발생했습니다.'
         });
+
+
+    } finally {
+
+      if (browser) {
+
+        try {
+
+          await browser.close();
+
+        } catch {}
+      }
     }
   }
 );
 
 
-// ----------------------------------------------------
+// ------------------------------------------------
 // PDF 보기
-// ----------------------------------------------------
+// ------------------------------------------------
 
 app.get(
   '/api/evidence/:id/pdf',
-  (req, res) => {
+  (
+    req,
+    res
+  ) => {
 
     const evidence =
       evidenceStore.get(
@@ -1092,7 +800,7 @@ app.get(
     if (
       !evidence ||
       !fs.existsSync(
-        evidence.filePath
+        evidence.pdfPath
       )
     ) {
 
@@ -1109,25 +817,28 @@ app.get(
       'application/pdf'
     );
 
+
     res.setHeader(
       'Content-Disposition',
       'inline'
     );
 
-    res.sendFile(
-      evidence.filePath
+
+    fs.createReadStream(
+      evidence.pdfPath
+    ).pipe(
+      res
     );
   }
 );
 
 
-// ----------------------------------------------------
-// PDF 다운로드
-// ----------------------------------------------------
-
 app.get(
   '/api/evidence/:id/download',
-  (req, res) => {
+  (
+    req,
+    res
+  ) => {
 
     const evidence =
       evidenceStore.get(
@@ -1135,36 +846,34 @@ app.get(
       );
 
 
-    if (
-      !evidence ||
-      !fs.existsSync(
-        evidence.filePath
-      )
-    ) {
+    if (!evidence) {
 
       return res
         .status(404)
         .send(
-          'PDF를 찾을 수 없습니다.'
+          '증거자료를 찾을 수 없습니다.'
         );
     }
 
 
     res.download(
-      evidence.filePath,
+      evidence.pdfPath,
       `evidence_${evidence.id}.pdf`
     );
   }
 );
 
 
-// ----------------------------------------------------
-// 증거 확인
-// ----------------------------------------------------
+// ------------------------------------------------
+// PDF 확인
+// ------------------------------------------------
 
 app.post(
   '/api/evidence/:id/confirm',
-  (req, res) => {
+  (
+    req,
+    res
+  ) => {
 
     const evidence =
       evidenceStore.get(
@@ -1186,561 +895,677 @@ app.post(
     evidence.confirmed =
       true;
 
-    evidence.confirmedAt =
-      new Date().toISOString();
-
 
     return res.json({
-      success: true,
-      evidenceId:
-        evidence.id,
-      confirmed: true,
+      success:
+        true
     });
   }
 );
 
 
-// ----------------------------------------------------
-// 2. Galaxy 신고폼 자동작성
-// ----------------------------------------------------
+// ------------------------------------------------
+// Galaxy 자동입력 보조
+// ------------------------------------------------
+
+async function setInputByPlaceholder(
+  page,
+  words,
+  value
+) {
+
+  if (!value) {
+    return false;
+  }
+
+
+  return page.evaluate(
+    (
+      patterns,
+      text
+    ) => {
+
+      const inputs =
+        [
+          ...document.querySelectorAll(
+            'input'
+          )
+        ];
+
+
+      const input =
+        inputs.find(
+          element => {
+
+            const placeholder =
+              (
+                element.placeholder ||
+                ''
+              ).toLowerCase();
+
+
+            return patterns.some(
+              word =>
+                placeholder.includes(
+                  word.toLowerCase()
+                )
+            );
+          }
+        );
+
+
+      if (!input) {
+        return false;
+      }
+
+
+      const setter =
+        Object
+          .getOwnPropertyDescriptor(
+            HTMLInputElement.prototype,
+            'value'
+          )
+          ?.set;
+
+
+      if (setter) {
+
+        setter.call(
+          input,
+          text
+        );
+
+      } else {
+
+        input.value =
+          text;
+      }
+
+
+      input.dispatchEvent(
+        new Event(
+          'input',
+          {
+            bubbles: true
+          }
+        )
+      );
+
+
+      input.dispatchEvent(
+        new Event(
+          'change',
+          {
+            bubbles: true
+          }
+        )
+      );
+
+
+      return true;
+
+    },
+
+    words,
+
+    value
+  );
+}
+
+
+async function setTextarea(
+  page,
+  value
+) {
+
+  if (!value) {
+    return false;
+  }
+
+
+  return page.evaluate(
+    text => {
+
+      const area =
+        document.querySelector(
+          'textarea'
+        );
+
+
+      if (!area) {
+        return false;
+      }
+
+
+      const setter =
+        Object
+          .getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype,
+            'value'
+          )
+          ?.set;
+
+
+      if (setter) {
+
+        setter.call(
+          area,
+          text
+        );
+
+      } else {
+
+        area.value =
+          text;
+      }
+
+
+      area.dispatchEvent(
+        new Event(
+          'input',
+          {
+            bubbles: true
+          }
+        )
+      );
+
+
+      area.dispatchEvent(
+        new Event(
+          'change',
+          {
+            bubbles: true
+          }
+        )
+      );
+
+
+      return true;
+    },
+
+    value
+  );
+}
+
+
+async function setDateInput(
+  page,
+  value
+) {
+
+  if (!value) {
+    return false;
+  }
+
+
+  return page.evaluate(
+    text => {
+
+      const input =
+        document.querySelector(
+          'input[type="date"]'
+        );
+
+
+      if (!input) {
+        return false;
+      }
+
+
+      input.value =
+        text;
+
+
+      input.dispatchEvent(
+        new Event(
+          'input',
+          {
+            bubbles: true
+          }
+        )
+      );
+
+
+      input.dispatchEvent(
+        new Event(
+          'change',
+          {
+            bubbles: true
+          }
+        )
+      );
+
+
+      return true;
+    },
+
+    value
+  );
+}
+
+
+async function selectNativeOption(
+  page,
+  patterns
+) {
+
+  return page.evaluate(
+    list => {
+
+      const selects =
+        [
+          ...document.querySelectorAll(
+            'select'
+          )
+        ];
+
+
+      for (
+        const select
+        of selects
+      ) {
+
+        const option =
+          [
+            ...select.options
+          ].find(
+            item => {
+
+              const text =
+                (
+                  item.textContent ||
+                  ''
+                ).trim()
+                  .toLowerCase();
+
+
+              return list.some(
+                pattern =>
+                  text.includes(
+                    pattern.toLowerCase()
+                  )
+              );
+            }
+          );
+
+
+        if (option) {
+
+          select.value =
+            option.value;
+
+
+          select.dispatchEvent(
+            new Event(
+              'input',
+              {
+                bubbles: true
+              }
+            )
+          );
+
+
+          select.dispatchEvent(
+            new Event(
+              'change',
+              {
+                bubbles: true
+              }
+            )
+          );
+
+
+          return true;
+        }
+      }
+
+
+      return false;
+
+    },
+
+    patterns
+  );
+}
+
+
+// ------------------------------------------------
+// Galaxy 실제 브라우저 세션 준비
+// ------------------------------------------------
 
 app.post(
   '/api/report/prepare/:id',
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
 
-    const evidence =
-      evidenceStore.get(
-        req.params.id
-      );
-
-
-    if (!evidence) {
-
-      return res
-        .status(404)
-        .json({
-          error:
-            '증거자료를 찾을 수 없습니다.'
-        });
-    }
-
-
-    if (!evidence.confirmed) {
-
-      return res
-        .status(400)
-        .json({
-          error:
-            '먼저 PDF를 확인해주세요.'
-        });
-    }
-
-
-    const stat =
-      fs.statSync(
-        evidence.filePath
-      );
-
-
-    if (
-      stat.size >=
-      10 * 1024 * 1024
-    ) {
-
-      return res
-        .status(400)
-        .json({
-          error:
-            'PDF가 10MB 이상입니다. Galaxy 첨부 제한을 초과합니다.'
-        });
-    }
-
-
-    let browser = null;
+    let browser;
 
 
     try {
 
-      // 기존 신고 세션이 있으면 종료
-      const oldSession =
-        reportSessions.get(
-          evidence.id
+      const evidence =
+        evidenceStore.get(
+          req.params.id
         );
 
 
-      if (oldSession) {
+      if (!evidence) {
+
+        return res
+          .status(404)
+          .json({
+            error:
+              '증거자료를 찾을 수 없습니다.'
+          });
+      }
+
+
+      if (!evidence.confirmed) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              '먼저 PDF 확인을 완료해주세요.'
+          });
+      }
+
+
+      const fileSize =
+        fs.statSync(
+          evidence.pdfPath
+        ).size;
+
+
+      if (
+        fileSize >
+        10 * 1024 * 1024
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              'PDF 용량이 10MB를 초과합니다.'
+          });
+      }
+
+
+      // 기존 세션 종료
+      for (
+        const [
+          token,
+          session
+        ]
+        of reportSessions
+      ) {
 
         try {
-          await oldSession.browser.close();
-        } catch {
-        }
+
+          await session.browser.close();
+
+        } catch {}
+
 
         reportSessions.delete(
-          evidence.id
+          token
         );
       }
 
 
-      const report =
-        req.body || {};
+      const body =
+        req.body ||
+        {};
 
 
-      const reportTitle =
-        truncate(
-          report.title ||
-          evidence.title ||
-          '아티스트 권익 침해 게시물 제보',
-          40
-        );
+      const report = {
 
+        type:
+          body.type ||
+          '비방·욕설·모욕',
 
-      const reportContent =
-        truncate(
-          report.content ||
-          `아티스트에 대한 권익 침해가 의심되는 게시물입니다. 원문 전체 내용과 댓글을 PDF 증거자료로 첨부합니다.`,
-          1000
-        );
+        title:
+          truncate(
+            body.title ||
+            evidence.title ||
+            '아티스트 권익 침해 게시물 제보',
+            40
+          ),
 
+        content:
+          truncate(
+            body.content ||
+            '아티스트에 대한 권익 침해가 의심되는 게시물입니다. 원문 전체 내용과 댓글을 PDF 증거자료로 첨부합니다.',
+            1000
+          ),
 
-      const reportType =
-        report.type ||
-        '비방·욕설·모욕';
+        channel:
+          body.channel ||
+          evidence.channel,
 
+        postDate:
+          body.postDate ||
+          normalizeDate(
+            evidence.date
+          ),
 
-      const channel =
-        report.channel ||
-        detectChannel(
+        author:
+          truncate(
+            body.author ||
+            evidence.author,
+            30
+          ),
+
+        url:
           evidence.url
-        );
-
-
-      const postDate =
-        report.postDate ||
-        normalizePostDate(
-          evidence.date
-        );
-
-
-      const author =
-        truncate(
-          report.author ||
-          evidence.author ||
-          '',
-          30
-        );
+      };
 
 
       browser =
-        await launchBrowser();
+        await launchVisibleBrowser();
+
+
+      const pages =
+        await browser.pages();
 
 
       const page =
+        pages[0] ||
         await browser.newPage();
-
-
-      await page.setViewport({
-        width: 1280,
-        height: 1200,
-        deviceScaleFactor: 1,
-      });
 
 
       await page.goto(
         GALAXY_URL,
         {
+
           waitUntil:
-            'networkidle2',
-          timeout: 60000,
+            'domcontentloaded',
+
+          timeout:
+            60000
         }
       );
 
 
-      // 약간 기다림
       await new Promise(
         resolve =>
           setTimeout(
             resolve,
-            1500
+            2500
           )
       );
 
 
-      // ------------------------------------------------
-      // 구분: G-DRAGON
-      // ------------------------------------------------
-
-      let artistResult =
-        await selectOptionByText(
-          page,
-          [
-            'G-DRAGON',
-            'GDRAGON'
-          ]
-        );
+      // native select일 경우 자동입력 시도
+      await selectNativeOption(
+        page,
+        [
+          'G-DRAGON',
+          '지드래곤'
+        ]
+      );
 
 
-      if (
-        !artistResult.success
-      ) {
-
-        await clickCustomOption(
-          page,
-          [
-            'G-DRAGON'
-          ]
-        );
-      }
-
-
-      // ------------------------------------------------
-      // 유형
-      // ------------------------------------------------
-
-      const typePatterns = {
-
-        '비방·욕설·모욕': [
-          '비방',
-          '욕설',
-          '모욕',
+      await selectNativeOption(
+        page,
+        [
+          report.type,
           'Defamation',
           'Verbal Abuse'
-        ],
-
-        '허위사실 유포 및 명예훼손': [
-          '허위사실',
-          '명예훼손',
-          'Spreading False',
-          'False Information'
-        ],
-
-        '성희롱·성적 모욕': [
-          '성희롱',
-          '성적 모욕',
-          'Sexual Harassment'
-        ],
-
-        '초상권·저작권 등 권리 침해': [
-          '초상권',
-          '저작권',
-          'Portrait Rights',
-          'Copyright'
-        ],
-
-        'AI 딥페이크 및 합성물 악용': [
-          '딥페이크',
-          '합성물',
-          'Deepfake'
-        ],
-
-        '기타 권익 침해': [
-          '기타 권익',
-          'Other Rights',
-          'ther Rights'
-        ],
-      };
+        ]
+      );
 
 
-      const patterns =
-        typePatterns[
-          reportType
-        ] ||
-        typePatterns[
-          '비방·욕설·모욕'
-        ];
+      await selectNativeOption(
+        page,
+        [
+          report.channel
+        ]
+      );
 
 
-      const typeResult =
-        await selectOptionByText(
-          page,
-          patterns
-        );
-
-
-      if (
-        !typeResult.success
-      ) {
-
-        await clickCustomOption(
-          page,
-          patterns
-        );
-      }
-
-
-      // ------------------------------------------------
       // 제목
-      // ------------------------------------------------
-
       await setInputByPlaceholder(
         page,
         [
-          '주요 내용을',
-          'main subject'
+          'title',
+          '제목'
         ],
-        reportTitle
+        report.title
       );
 
 
-      // ------------------------------------------------
       // 내용
-      // ------------------------------------------------
-
-      await setFirstTextarea(
+      await setTextarea(
         page,
-        reportContent
+        report.content
       );
 
 
-      // ------------------------------------------------
-      // 채널
-      // ------------------------------------------------
-
-      const channelPatterns = {
-
-        dcinside: [
-          'dcinside'
-        ],
-
-        fmkorea: [
-          'fmkorea'
-        ],
-
-        Theqoo: [
-          'Theqoo',
-          'theqoo'
-        ],
-
-        instiz: [
-          'instiz'
-        ],
-
-        Naver: [
-          'Naver'
-        ],
-
-        Nate: [
-          'Nate'
-        ],
-
-        'Daum Cafe': [
-          'Daum Cafe',
-          'Daum'
-        ],
-
-        Facebook: [
-          'Facebook'
-        ],
-
-        Instagram: [
-          'Instagram'
-        ],
-
-        Threads: [
-          'Threads'
-        ],
-
-        TikTok: [
-          'TikTok'
-        ],
-
-        X: [
-          'X (Twitter)',
-          'Twitter'
-        ],
-
-        YouTube: [
-          'YouTube'
-        ],
-
-        기타: [
-          '기타',
-          'etc',
-          'Other'
-        ],
-      };
-
-
-      const channelSearch =
-        channelPatterns[channel] ||
+      // URL
+      await setInputByPlaceholder(
+        page,
         [
-          channel
-        ];
+          'url',
+          '링크'
+        ],
+        report.url
+      );
 
 
-      const channelResult =
-        await selectOptionByText(
-          page,
-          channelSearch
+      // 작성자
+      await setInputByPlaceholder(
+        page,
+        [
+          'author',
+          '작성자',
+          'nickname'
+        ],
+        report.author
+      );
+
+
+      // 게시 날짜
+      await setDateInput(
+        page,
+        report.postDate
+      );
+
+
+      // PDF 첨부
+      let pdfAttached =
+        false;
+
+
+      const fileInputs =
+        await page.$$(
+          'input[type="file"]'
         );
 
 
       if (
-        !channelResult.success
+        fileInputs.length > 0
       ) {
 
-        await clickCustomOption(
-          page,
-          channelSearch
+        await fileInputs[0]
+          .uploadFile(
+            evidence.pdfPath
+          );
+
+
+        pdfAttached =
+          true;
+
+
+        await new Promise(
+          resolve =>
+            setTimeout(
+              resolve,
+              1500
+            )
         );
       }
 
 
-      // ------------------------------------------------
-      // 날짜
-      // ------------------------------------------------
-
-      if (postDate) {
-
-        await setDateInput(
-          page,
-          postDate
-        );
-      }
-
-
-      // ------------------------------------------------
-      // URL
-      // ------------------------------------------------
-
-      await setInputByPlaceholder(
-        page,
-        [
-          '게시물 url',
-          'post url'
-        ],
-        evidence.url
-      );
-
-
-      // ------------------------------------------------
-      // 작성자
-      // ------------------------------------------------
-
-      if (author) {
-
-        await setInputByPlaceholder(
-          page,
-          [
-            '닉네임',
-            'nickname',
-            'id 등'
-          ],
-          author
-        );
-      }
-
-
-      // ------------------------------------------------
-      // PDF 자동첨부
-      // ------------------------------------------------
-
-      const attached =
-        await attachPdf(
-          page,
-          evidence.filePath
-        );
-
-
-      // ------------------------------------------------
-      // 사실확인 체크
-      // ------------------------------------------------
-
-      const truthChecked =
-        await checkTruthCheckbox(
-          page
-        );
-
-
-      // 스크린샷
-      const screenshotPath =
-        path.join(
-          TEMP_DIR,
-          `${evidence.id}_galaxy.png`
-        );
-
-
-      await page.screenshot({
-        path:
-          screenshotPath,
-
-        fullPage: true,
-      });
+      const token =
+        crypto
+          .randomBytes(
+            24
+          )
+          .toString(
+            'hex'
+          );
 
 
       reportSessions.set(
-        evidence.id,
+        token,
         {
+
+          token,
+
+          evidenceId:
+            evidence.id,
+
           browser,
+
           page,
-          screenshotPath,
+
           createdAt:
             Date.now(),
 
-          data: {
-            title:
-              reportTitle,
-            content:
-              reportContent,
-            type:
-              reportType,
-            channel,
-            postDate,
-            author,
-            attached,
-            truthChecked,
-          },
+          lastActive:
+            Date.now()
         }
       );
 
 
-      browser = null;
+      browser =
+        null;
 
 
       return res.json({
 
-        success: true,
+        success:
+          true,
 
-        evidenceId:
-          evidence.id,
+        sessionToken:
+          token,
 
-        screenshotUrl:
-          `/api/report/screenshot/${evidence.id}`,
+        remoteUrl:
+          `/remote.html?session=${token}`,
 
-        report: {
-          artist:
-            'G-DRAGON',
+        pdfAttached,
 
-          type:
-            reportType,
-
-          title:
-            reportTitle,
-
-          content:
-            reportContent,
-
-          channel,
-
-          postDate,
-
-          url:
-            evidence.url,
-
-          author,
-
-          pdfAttached:
-            attached,
-
-          truthChecked:
-            truthChecked,
-        },
+        report
       });
 
 
     } catch (error) {
 
       console.error(
-        'REPORT PREPARE ERROR:',
+        'Galaxy prepare error:',
         error
       );
 
@@ -1748,78 +1573,40 @@ app.post(
       if (browser) {
 
         try {
+
           await browser.close();
-        } catch {
-        }
+
+        } catch {}
       }
 
 
       return res
         .status(500)
         .json({
+
           error:
             error.message ||
-            'Galaxy 신고서 준비 중 오류가 발생했습니다.'
+            'Galaxy 신고 페이지를 열 수 없습니다.'
         });
     }
   }
 );
 
 
-// ----------------------------------------------------
-// Galaxy 작성화면 스크린샷
-// ----------------------------------------------------
+// ------------------------------------------------
+// 세션 유효성 검사
+// ------------------------------------------------
 
 app.get(
-  '/api/report/screenshot/:id',
-  (req, res) => {
+  '/api/report/session/:token',
+  (
+    req,
+    res
+  ) => {
 
     const session =
       reportSessions.get(
-        req.params.id
-      );
-
-
-    if (
-      !session ||
-      !session.screenshotPath ||
-      !fs.existsSync(
-        session.screenshotPath
-      )
-    ) {
-
-      return res
-        .status(404)
-        .send(
-          '신고서 미리보기를 찾을 수 없습니다.'
-        );
-    }
-
-
-    res.setHeader(
-      'Content-Type',
-      'image/png'
-    );
-
-
-    res.sendFile(
-      session.screenshotPath
-    );
-  }
-);
-
-
-// ----------------------------------------------------
-// 3. 사용자가 마지막 버튼을 눌렀을 때만 실제 등록
-// ----------------------------------------------------
-
-app.post(
-  '/api/report/submit/:id',
-  async (req, res) => {
-
-    const session =
-      reportSessions.get(
-        req.params.id
+        req.params.token
       );
 
 
@@ -1828,155 +1615,259 @@ app.post(
       return res
         .status(404)
         .json({
-          error:
-            'Galaxy 신고 세션이 없습니다. 신고서를 다시 준비해주세요.'
+          active:
+            false
         });
     }
 
 
-    const {
-      browser,
-      page
-    } = session;
+    session.lastActive =
+      Date.now();
 
 
-    try {
-
-      // 마지막 순간에 버튼을 서버가 클릭
-      const clicked =
-        await findAndClickSubmit(
-          page
-        );
-
-
-      if (!clicked) {
-
-        return res
-          .status(500)
-          .json({
-            error:
-              'Galaxy 등록하기 버튼을 찾지 못했습니다.'
-          });
-      }
+    return res.json({
+      active:
+        true
+    });
+  }
+);
 
 
-      // 서버 응답/페이지 변화 대기
-      await new Promise(
-        resolve =>
-          setTimeout(
-            resolve,
-            3500
-          )
+// ------------------------------------------------
+// 세션 종료
+// ------------------------------------------------
+
+app.post(
+  '/api/report/close/:token',
+  async (
+    req,
+    res
+  ) => {
+
+    const session =
+      reportSessions.get(
+        req.params.token
       );
 
 
-      const currentUrl =
-        page.url();
-
-
-      const pageText =
-        await page.evaluate(
-          () =>
-            (
-              document.body.innerText ||
-              ''
-            ).slice(
-              0,
-              4000
-            )
-        );
-
-
-      const resultScreenshot =
-        path.join(
-          TEMP_DIR,
-          `${req.params.id}_submitted.png`
-        );
-
-
-      await page.screenshot({
-        path:
-          resultScreenshot,
-
-        fullPage: true,
-      });
-
-
-      const successWords = [
-        '접수',
-        '완료',
-        '감사',
-        'submitted',
-        'success',
-        'thank you',
-      ];
-
-
-      const lower =
-        pageText.toLowerCase();
-
-
-      const successDetected =
-        successWords.some(word =>
-          lower.includes(
-            word.toLowerCase()
-          )
-        );
-
+    if (session) {
 
       try {
 
-        await browser.close();
+        await session.browser.close();
 
-      } catch {
-      }
+      } catch {}
 
 
       reportSessions.delete(
-        req.params.id
+        req.params.token
+      );
+    }
+
+
+    return res.json({
+      success:
+        true
+    });
+  }
+);
+
+
+// ------------------------------------------------
+// VNC WebSocket 브리지
+// ------------------------------------------------
+
+const wss =
+  new WebSocket.Server({
+
+    noServer:
+      true,
+
+    handleProtocols:
+      protocols => {
+
+        if (
+          protocols.has(
+            'binary'
+          )
+        ) {
+
+          return 'binary';
+        }
+
+
+        return false;
+      }
+  });
+
+
+server.on(
+  'upgrade',
+  (
+    request,
+    socket,
+    head
+  ) => {
+
+    try {
+
+      const url =
+        new URL(
+          request.url,
+          `http://${request.headers.host}`
+        );
+
+
+      if (
+        url.pathname !==
+        '/vnc-ws'
+      ) {
+
+        socket.destroy();
+
+        return;
+      }
+
+
+      const token =
+        url.searchParams.get(
+          'session'
+        );
+
+
+      if (
+        !token ||
+        !reportSessions.has(
+          token
+        )
+      ) {
+
+        socket.destroy();
+
+        return;
+      }
+
+
+      const session =
+        reportSessions.get(
+          token
+        );
+
+
+      session.lastActive =
+        Date.now();
+
+
+      wss.handleUpgrade(
+        request,
+        socket,
+        head,
+        ws => {
+
+          const tcp =
+            net.createConnection(
+              {
+
+                host:
+                  '127.0.0.1',
+
+                port:
+                  5900
+              }
+            );
+
+
+          tcp.on(
+            'data',
+            data => {
+
+              if (
+                ws.readyState ===
+                WebSocket.OPEN
+              ) {
+
+                ws.send(
+                  data
+                );
+              }
+            }
+          );
+
+
+          ws.on(
+            'message',
+            data => {
+
+              if (
+                !tcp.destroyed
+              ) {
+
+                tcp.write(
+                  data
+                );
+              }
+            }
+          );
+
+
+          ws.on(
+            'close',
+            () => {
+
+              tcp.destroy();
+            }
+          );
+
+
+          ws.on(
+            'error',
+            () => {
+
+              tcp.destroy();
+            }
+          );
+
+
+          tcp.on(
+            'close',
+            () => {
+
+              try {
+
+                ws.close();
+
+              } catch {}
+            }
+          );
+
+
+          tcp.on(
+            'error',
+            () => {
+
+              try {
+
+                ws.close();
+
+              } catch {}
+            }
+          );
+
+        }
       );
 
 
-      return res.json({
+    } catch {
 
-        success: true,
-
-        clicked: true,
-
-        successDetected,
-
-        currentUrl,
-
-        message:
-          successDetected
-            ? 'Galaxy 등록 요청이 완료되었습니다.'
-            : '등록하기 버튼을 눌렀습니다. Galaxy 응답을 확인해주세요.',
-      });
-
-
-    } catch (error) {
-
-      console.error(
-        'REPORT SUBMIT ERROR:',
-        error
-      );
-
-
-      return res
-        .status(500)
-        .json({
-          error:
-            error.message ||
-            'Galaxy 등록 중 오류가 발생했습니다.'
-        });
+      socket.destroy();
     }
   }
 );
 
 
-// ----------------------------------------------------
-// 오래된 파일 / 브라우저 세션 정리
-// ----------------------------------------------------
+// ------------------------------------------------
+// 오래된 자료 정리
+// ------------------------------------------------
 
 setInterval(
   async () => {
@@ -1986,31 +1877,33 @@ setInterval(
 
 
     for (
-      const [id, evidence]
+      const [
+        id,
+        evidence
+      ]
       of evidenceStore
     ) {
 
       if (
         now -
-        evidence.createdTimestamp >
-        EVIDENCE_TTL_MS
+        evidence.createdAt >
+        EVIDENCE_TTL
       ) {
 
         try {
 
           if (
             fs.existsSync(
-              evidence.filePath
+              evidence.pdfPath
             )
           ) {
 
             fs.unlinkSync(
-              evidence.filePath
+              evidence.pdfPath
             );
           }
 
-        } catch {
-        }
+        } catch {}
 
 
         evidenceStore.delete(
@@ -2021,63 +1914,53 @@ setInterval(
 
 
     for (
-      const [id, session]
+      const [
+        token,
+        session
+      ]
       of reportSessions
     ) {
 
       if (
         now -
-        session.createdAt >
-        EVIDENCE_TTL_MS
+        session.lastActive >
+        EVIDENCE_TTL
       ) {
 
         try {
 
           await session.browser.close();
 
-        } catch {
-        }
-
-
-        try {
-
-          if (
-            session.screenshotPath &&
-            fs.existsSync(
-              session.screenshotPath
-            )
-          ) {
-
-            fs.unlinkSync(
-              session.screenshotPath
-            );
-          }
-
-        } catch {
-        }
+        } catch {}
 
 
         reportSessions.delete(
-          id
+          token
         );
       }
     }
 
   },
+
   10 * 60 * 1000
 );
 
 
-// ----------------------------------------------------
+// ------------------------------------------------
+// 서버 실행
+// ------------------------------------------------
 
-app.listen(
+server.listen(
   PORT,
   '0.0.0.0',
   () => {
 
     console.log(
-      `Evidence tool server running on port ${PORT}`
+      `Evidence tool running on port ${PORT}`
     );
 
+    console.log(
+      `DISPLAY = ${DISPLAY}`
+    );
   }
 );
