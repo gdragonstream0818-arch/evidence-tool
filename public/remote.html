@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+
+<html lang="ko">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+>
+
+<title>Galaxy 실제 신고 페이지</title>
+
+<style>
+
+html,
+body {
+
+  width: 100%;
+  height: 100%;
+
+  margin: 0;
+
+  overflow: hidden;
+
+  background: #111;
+}
+
+
+#screen {
+
+  width: 100%;
+  height: 100%;
+
+  background: #111;
+}
+
+
+#status {
+
+  position: fixed;
+
+  top: 8px;
+  left: 50%;
+
+  transform:
+    translateX(-50%);
+
+  z-index: 9999;
+
+  padding:
+    7px 12px;
+
+  border-radius: 20px;
+
+  background:
+    rgba(
+      0,
+      0,
+      0,
+      .75
+    );
+
+  color: white;
+
+  font-family:
+    sans-serif;
+
+  font-size: 12px;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div id="status">
+Galaxy 브라우저 연결 중...
+</div>
+
+
+<div id="screen"></div>
+
+
+<script type="module">
+
+import RFB
+from '/novnc/core/rfb.js';
+
+
+const params =
+  new URLSearchParams(
+    location.search
+  );
+
+
+const session =
+  params.get(
+    'session'
+  );
+
+
+const status =
+  document.getElementById(
+    'status'
+  );
+
+
+if (!session) {
+
+  status.textContent =
+    '잘못된 세션입니다.';
+
+  throw new Error(
+    'Missing session'
+  );
+}
+
+
+const check =
+  await fetch(
+    `/api/report/session/${session}`
+  );
+
+
+if (!check.ok) {
+
+  status.textContent =
+    '세션이 종료되었습니다.';
+
+  throw new Error(
+    'Session expired'
+  );
+}
+
+
+const protocol =
+  location.protocol ===
+  'https:'
+    ? 'wss'
+    : 'ws';
+
+
+const socketUrl =
+  `${protocol}://${location.host}/vnc-ws?session=${encodeURIComponent(session)}`;
+
+
+const rfb =
+  new RFB(
+
+    document.getElementById(
+      'screen'
+    ),
+
+    socketUrl,
+
+    {
+
+      credentials: {
+        password: ''
+      }
+    }
+  );
+
+
+rfb.scaleViewport =
+  true;
+
+
+rfb.resizeSession =
+  true;
+
+
+rfb.viewOnly =
+  false;
+
+
+rfb.clipViewport =
+  false;
+
+
+rfb.addEventListener(
+  'connect',
+  () => {
+
+    status.textContent =
+      'Galaxy 실제 화면 · 직접 조작 가능';
+
+
+    setTimeout(
+      () => {
+
+        status.style.display =
+          'none';
+
+      },
+      2500
+    );
+  }
+);
+
+
+rfb.addEventListener(
+  'disconnect',
+  event => {
+
+    status.style.display =
+      'block';
+
+
+    status.textContent =
+      event.detail.clean
+        ? '연결이 종료되었습니다.'
+        : '서버 브라우저 연결이 끊겼습니다.';
+  }
+);
+
+</script>
+
+
+</body>
+
+</html>
