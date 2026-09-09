@@ -1,308 +1,115 @@
 <!DOCTYPE html>
-
 <html lang="ko">
 
 <head>
-
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1.0"
->
-
-<title>Galaxy 증거수집 · 신고 도구</title>
-
+<title>Evidence Tool - 온라인 증거 보존</title>
 
 <style>
-
-* {
-  box-sizing: border-box;
+*{
+  box-sizing:border-box;
 }
 
-
-body {
-
-  margin: 0;
-  padding: 14px;
-
-  background: #f4f5f7;
-  color: #111827;
-
+body{
+  margin:0;
+  padding:16px;
+  background:#f4f5f7;
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Apple SD Gothic Neo",
-    "Malgun Gothic",
-    sans-serif;
+  -apple-system,
+  BlinkMacSystemFont,
+  "Apple SD Gothic Neo",
+  "Malgun Gothic",
+  sans-serif;
 }
 
-
-.wrap {
-
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
+.wrap{
+  max-width:760px;
+  margin:auto;
 }
 
-
-h1 {
-
-  margin: 8px 0 5px;
-  font-size: 22px;
+h1{
+  font-size:24px;
 }
 
-
-.desc {
-
-  margin-bottom: 18px;
-
-  color: #6b7280;
-
-  font-size: 13px;
-  line-height: 1.55;
+.desc{
+  color:#666;
+  line-height:1.6;
+  margin-bottom:20px;
 }
 
-
-.card {
-
-  background: white;
-
-  border-radius: 14px;
-
-  padding: 16px;
-
-  margin-bottom: 14px;
-
-  box-shadow:
-    0 1px 5px
-    rgba(0,0,0,.08);
+.card{
+  background:white;
+  padding:18px;
+  border-radius:14px;
+  margin-bottom:15px;
+  box-shadow:0 2px 8px rgba(0,0,0,.08);
 }
-
-
-.title {
-
-  font-size: 16px;
-  font-weight: 800;
-
-  margin-bottom: 12px;
-}
-
 
 input,
 textarea,
-select {
-
-  width: 100%;
-
-  padding: 12px;
-
-  margin-bottom: 10px;
-
-  border:
-    1px solid
-    #d1d5db;
-
-  border-radius: 9px;
-
-  font-size: 15px;
-
-  background: white;
+button{
+  width:100%;
+  padding:13px;
+  border-radius:10px;
+  font-size:15px;
 }
 
-
-textarea {
-
-  min-height: 110px;
-
-  resize: vertical;
+input,
+textarea{
+  border:1px solid #ddd;
+  margin-bottom:10px;
 }
 
-
-button,
-.btn {
-
-  display: block;
-
-  width: 100%;
-
-  border: 0;
-
-  border-radius: 9px;
-
-  padding: 14px;
-
-  font-size: 15px;
-  font-weight: 800;
-
-  text-align: center;
-  text-decoration: none;
-
-  cursor: pointer;
+button{
+  border:0;
+  cursor:pointer;
+  font-weight:bold;
 }
 
-
-button:disabled {
-
-  opacity: .5;
+.blue{
+  background:#2563eb;
+  color:white;
 }
 
-
-.blue {
-
-  background: #2563eb;
-  color: white;
+.green{
+  background:#15803d;
+  color:white;
 }
 
-
-.black {
-
-  background: #111827;
-  color: white;
+.gray{
+  background:#374151;
+  color:white;
 }
 
-
-.green {
-
-  background: #15803d;
-  color: white;
+.hidden{
+  display:none;
 }
 
-
-.light {
-
-  background: #eef2ff;
-  color: #1e40af;
+.meta{
+  background:#f8fafc;
+  padding:10px;
+  border-radius:8px;
+  margin-bottom:8px;
+  word-break:break-all;
 }
 
-
-.status {
-
-  margin-top: 10px;
-
-  text-align: center;
-
-  font-size: 13px;
-
-  color: #6b7280;
-
-  line-height: 1.5;
+iframe{
+  width:100%;
+  height:500px;
+  border:1px solid #ddd;
+  border-radius:10px;
 }
 
-
-.success {
-
-  color: #15803d;
-  font-weight: 700;
+.status{
+  margin-top:10px;
+  text-align:center;
 }
 
-
-.error {
-
-  color: #dc2626;
-  font-weight: 700;
-}
-
-
-.label {
-
-  color: #6b7280;
-
-  font-size: 12px;
-
-  margin-bottom: 4px;
-}
-
-
-.meta {
-
-  padding: 9px;
-
-  margin-bottom: 8px;
-
-  background: #f9fafb;
-
-  border:
-    1px solid
-    #e5e7eb;
-
-  border-radius: 8px;
-
-  font-size: 13px;
-
-  word-break: break-all;
-}
-
-
-.pdf-preview {
-
-  width: 100%;
-  height: 500px;
-
-  border:
-    1px solid
-    #d1d5db;
-
-  border-radius: 10px;
-}
-
-
-.remote-frame {
-
-  width: 100%;
-  height: 720px;
-
-  border:
-    1px solid
-    #d1d5db;
-
-  border-radius: 10px;
-
-  background: #111;
-}
-
-
-.notice {
-
-  margin-bottom: 12px;
-
-  padding: 12px;
-
-  border-radius: 9px;
-
-  background: #ecfdf5;
-
-  border:
-    1px solid
-    #bbf7d0;
-
-  font-size: 13px;
-
-  line-height: 1.6;
-}
-
-
-.hidden {
-
-  display: none;
-}
-
-
-@media(max-width:500px) {
-
-  body {
-    padding: 10px;
-  }
-
-
-  .pdf-preview {
-    height: 440px;
-  }
-
-
-  .remote-frame {
-    height: 650px;
-  }
+.success{
+  color:#15803d;
+  font-weight:bold;
 }
 
 </style>
@@ -312,283 +119,126 @@ button:disabled {
 
 <body>
 
-
 <div class="wrap">
 
 
 <h1>
-Galaxy 증거수집 · 신고
+Evidence Tool
 </h1>
 
-
 <div class="desc">
-
-게시물 증거 PDF를 만든 뒤
-Galaxy의 실제 신고 페이지를 열어 직접 수정하고
-직접 등록할 수 있습니다.
-
+삭제되기 전 온라인 게시물의 증거를 수집하고<br>
+제출용 PDF 자료로 보존합니다.
 </div>
-
 
 
 <div class="card">
 
-<div class="title">
-1. 게시물 URL
-</div>
+<h3>
+1. 원본 URL 입력
+</h3>
 
 
 <input
-  id="urlInput"
-  type="url"
-  placeholder="게시물 URL 붙여넣기"
->
+id="urlInput"
+placeholder="게시물 URL 입력">
 
 
 <button
-  id="captureBtn"
-  class="blue"
->
-증거 PDF 만들기
+id="captureBtn"
+class="blue">
+
+증거 PDF 생성
+
 </button>
 
 
-<div
-  id="captureStatus"
-  class="status"
-></div>
+<div id="status"
+class="status">
+
+</div>
 
 </div>
 
 
 
 <div
-  id="infoCard"
-  class="card hidden"
->
+id="infoCard"
+class="card hidden">
 
-<div class="title">
-2. 수집 정보
+
+<h3>
+증거 정보
+</h3>
+
+
+<div id="meta"></div>
+
+
 </div>
 
-
-<div id="metaBox"></div>
-
-</div>
 
 
 
 <div
-  id="pdfCard"
-  class="card hidden"
->
+id="pdfCard"
+class="card hidden">
 
-<div class="title">
-3. PDF 확인
-</div>
+
+<h3>
+PDF 확인
+</h3>
 
 
 <iframe
-  id="pdfPreview"
-  class="pdf-preview"
-></iframe>
+id="pdfFrame">
+</iframe>
 
-
-<br>
-
-
-<a
-  id="pdfOpen"
-  class="btn light"
-  target="_blank"
->
-PDF 크게 보기
-</a>
-
-</div>
-
-
-
-<div
-  id="reportCard"
-  class="card hidden"
->
-
-<div class="title">
-4. 신고 내용
-</div>
-
-
-
-<div class="label">
-권익 침해 유형
-</div>
-
-
-<select id="reportType">
-
-<option>
-비방·욕설·모욕
-</option>
-
-<option>
-허위사실 유포 및 명예훼손
-</option>
-
-<option>
-성희롱·성적 모욕
-</option>
-
-<option>
-초상권·저작권 등 권리 침해
-</option>
-
-<option>
-AI 딥페이크 및 합성물 악용
-</option>
-
-<option>
-기타 권익 침해
-</option>
-
-</select>
-
-
-
-<div class="label">
-제목
-</div>
-
-
-<input
-  id="reportTitle"
-  maxlength="40"
->
-
-
-
-<div class="label">
-내용
-</div>
-
-
-<textarea
-  id="reportContent"
-  maxlength="1000"
-></textarea>
-
-
-
-<div class="label">
-게시 채널
-</div>
-
-
-<input
-  id="reportChannel"
->
-
-
-
-<div class="label">
-게시 일자
-</div>
-
-
-<input
-  id="reportDate"
-  type="date"
->
-
-
-
-<div class="label">
-작성자
-</div>
-
-
-<input
-  id="reportAuthor"
-  maxlength="30"
->
-
-
-
-<button
-  id="prepareBtn"
-  class="black"
->
-Galaxy 실제 신고 페이지 열기
-</button>
-
-
-<div
-  id="prepareStatus"
-  class="status"
-></div>
-
-</div>
-
-
-
-<div
-  id="remoteCard"
-  class="card hidden"
->
-
-<div class="title">
-5. Galaxy 실제 신고 페이지
-</div>
-
-
-<div class="notice">
-
-아래 화면은 이미지가 아닙니다.
-
-<br>
-
-<b>
-서버에서 실제로 실행 중인 Galaxy 신고 페이지입니다.
-</b>
 
 <br><br>
 
-입력칸을 직접 누르고 수정할 수 있고,
-스크롤도 할 수 있습니다.
 
-<br>
+<button
+id="downloadBtn"
+class="green">
 
-마지막에는 Galaxy 페이지 안의
-<b>등록하기</b>
-버튼을 직접 누르면 됩니다.
+PDF 다운로드
+
+</button>
+
 
 </div>
 
 
-<a
-  id="remoteOpen"
-  class="btn green"
-  target="_blank"
->
-Galaxy 실제 화면 크게 열기
-</a>
-
-
-<br>
-
-
-<iframe
-  id="remoteFrame"
-  class="remote-frame"
-></iframe>
 
 
 <div
-  id="remoteStatus"
-  class="status"
-></div>
+id="reportCard"
+class="card hidden">
+
+
+<h3>
+신고 내용 복사
+</h3>
+
+
+<textarea
+id="reportText"
+rows="8">
+</textarea>
+
+
+<button
+id="copyBtn"
+class="gray">
+
+내용 복사
+
+</button>
+
 
 </div>
+
 
 
 </div>
@@ -597,494 +247,207 @@ Galaxy 실제 화면 크게 열기
 
 <script>
 
-let evidenceId =
-  null;
+
+let evidenceId=null;
 
 
-let metadata =
-  null;
-
-
-function $(id) {
-
-  return document
-    .getElementById(
-      id
-    );
-}
-
-
-function escapeHtml(
-  value
-) {
-
-  return String(
-    value || ''
-  )
-    .replace(
-      /&/g,
-      '&amp;'
-    )
-    .replace(
-      /</g,
-      '&lt;'
-    )
-    .replace(
-      />/g,
-      '&gt;'
-    )
-    .replace(
-      /"/g,
-      '&quot;'
-    );
-}
-
-
-function normalizeDate(
-  value
-) {
-
-  if (!value) {
-    return '';
-  }
-
-
-  const match =
-    String(
-      value
-    ).match(
-      /(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/
-    );
-
-
-  if (!match) {
-    return '';
-  }
-
-
-  return (
-    match[1] +
-    '-' +
-    match[2].padStart(
-      2,
-      '0'
-    ) +
-    '-' +
-    match[3].padStart(
-      2,
-      '0'
-    )
-  );
+function $(id){
+ return document.getElementById(id);
 }
 
 
 
-// ----------------------------------------------
-// PDF 생성
-// ----------------------------------------------
+$("captureBtn").onclick = async()=>{
 
-$('captureBtn').onclick =
-async () => {
 
-  const url =
-    $('urlInput')
-      .value
-      .trim();
+const url =
+$("urlInput").value.trim();
 
 
-  if (!url) {
+if(!url){
 
-    alert(
-      'URL을 입력해주세요.'
-    );
+ alert("URL을 입력해주세요.");
+ return;
 
-    return;
-  }
+}
 
 
-  $('captureBtn').disabled =
-    true;
+$("status").innerText =
+"증거 수집 중입니다...";
 
 
-  $('captureStatus').textContent =
-    '원본 페이지 전체를 PDF로 저장하고 있습니다...';
+try{
 
 
-  $('infoCard')
-    .classList
-    .add(
-      'hidden'
-    );
+const res =
+await fetch(
+"/api/capture",
+{
 
+method:"POST",
 
-  $('pdfCard')
-    .classList
-    .add(
-      'hidden'
-    );
+headers:{
+"Content-Type":"application/json"
+},
 
+body:
+JSON.stringify({
+url
+})
 
-  $('reportCard')
-    .classList
-    .add(
-      'hidden'
-    );
+});
 
 
-  $('remoteCard')
-    .classList
-    .add(
-      'hidden'
-    );
+const data =
+await res.json();
 
 
-  try {
 
-    const res =
-      await fetch(
-        '/api/capture',
-        {
+if(!res.ok){
 
-          method:
-            'POST',
+throw new Error(
+data.error || "실패"
+);
 
-          headers: {
+}
 
-            'Content-Type':
-              'application/json'
-          },
 
-          body:
-            JSON.stringify({
-              url
-            })
-        }
-      );
 
+evidenceId =
+data.evidenceId;
 
-    const data =
-      await res.json();
 
 
-    if (!res.ok) {
+const m =
+data.metadata;
 
-      throw new Error(
-        data.error ||
-        'PDF 생성 실패'
-      );
-    }
 
 
-    evidenceId =
-      data.evidenceId;
+$("meta").innerHTML=`
 
+<div class="meta">
+제목<br>
+${m.title || ""}
+</div>
 
-    metadata =
-      data.metadata;
+<div class="meta">
+작성자<br>
+${m.author || ""}
+</div>
 
+<div class="meta">
+게시일<br>
+${m.date || ""}
+</div>
 
-    $('metaBox').innerHTML = `
+<div class="meta">
+채널<br>
+${m.channel || ""}
+</div>
 
-      <div class="label">
-      제목
-      </div>
+<div class="meta">
+URL<br>
+${m.url}
+</div>
 
-      <div class="meta">
-      ${escapeHtml(metadata.title)}
-      </div>
+<div class="meta">
+SHA256<br>
+${m.hash}
+</div>
 
+`;
 
-      <div class="label">
-      작성자
-      </div>
 
-      <div class="meta">
-      ${escapeHtml(metadata.author)}
-      </div>
 
+$("infoCard")
+.classList
+.remove("hidden");
 
-      <div class="label">
-      게시일
-      </div>
 
-      <div class="meta">
-      ${escapeHtml(metadata.date)}
-      </div>
 
+$("pdfFrame").src =
+data.previewUrl;
 
-      <div class="label">
-      URL
-      </div>
 
-      <div class="meta">
-      ${escapeHtml(metadata.url)}
-      </div>
 
-    `;
+$("downloadBtn").onclick=()=>{
 
+location.href =
+data.downloadUrl;
 
-    $('pdfPreview').src =
-      data.previewUrl;
-
-
-    $('pdfOpen').href =
-      data.previewUrl;
-
-
-    $('reportTitle').value =
-      (
-        metadata.title ||
-        '아티스트 권익 침해 게시물 제보'
-      )
-        .slice(
-          0,
-          40
-        );
-
-
-    $('reportContent').value =
-      '아티스트에 대한 권익 침해가 의심되는 게시물입니다. 원문 전체 내용과 댓글을 PDF 증거자료로 첨부합니다.';
-
-
-    $('reportChannel').value =
-      metadata.channel ||
-      '기타';
-
-
-    $('reportDate').value =
-      normalizeDate(
-        metadata.date
-      );
-
-
-    $('reportAuthor').value =
-      (
-        metadata.author ||
-        ''
-      )
-        .slice(
-          0,
-          30
-        );
-
-
-    $('infoCard')
-      .classList
-      .remove(
-        'hidden'
-      );
-
-
-    $('pdfCard')
-      .classList
-      .remove(
-        'hidden'
-      );
-
-
-    $('reportCard')
-      .classList
-      .remove(
-        'hidden'
-      );
-
-
-    $('captureStatus').innerHTML =
-      '<span class="success">PDF 생성 완료</span>';
-
-
-    setTimeout(
-      () => {
-
-        $('pdfCard')
-          .scrollIntoView({
-
-            behavior:
-              'smooth'
-          });
-
-      },
-      200
-    );
-
-
-  } catch (error) {
-
-
-    $('captureStatus').innerHTML =
-      `<span class="error">${escapeHtml(error.message)}</span>`;
-
-
-  } finally {
-
-
-    $('captureBtn').disabled =
-      false;
-  }
 };
 
 
 
-// ----------------------------------------------
-// Galaxy 실제 화면 열기
-// ----------------------------------------------
-
-$('prepareBtn').onclick =
-async () => {
-
-  if (!evidenceId) {
-    return;
-  }
+$("pdfCard")
+.classList
+.remove("hidden");
 
 
-  $('prepareBtn').disabled =
-    true;
+
+$("reportText").value =
+`
+권익 침해 게시물 증거자료입니다.
+
+제목:
+${m.title}
+
+작성자:
+${m.author}
+
+게시일:
+${m.date}
+
+원본 URL:
+${m.url}
+
+첨부 PDF:
+증거자료 첨부
+
+`;
 
 
-  $('prepareStatus').textContent =
-    'Galaxy 실제 신고 페이지를 준비하고 있습니다...';
+
+$("reportCard")
+.classList
+.remove("hidden");
 
 
-  try {
+
+$("status").innerHTML =
+"<span class='success'>PDF 생성 완료</span>";
 
 
-    const confirmRes =
-      await fetch(
 
-        `/api/evidence/${evidenceId}/confirm`,
+}
+catch(e){
 
-        {
-          method:
-            'POST'
-        }
-      );
+$("status").innerText =
+e.message;
+
+}
 
 
-    if (!confirmRes.ok) {
-
-      throw new Error(
-        'PDF 확인 처리 실패'
-      );
-    }
-
-
-    const res =
-      await fetch(
-
-        `/api/report/prepare/${evidenceId}`,
-
-        {
-
-          method:
-            'POST',
-
-          headers: {
-
-            'Content-Type':
-              'application/json'
-          },
-
-          body:
-            JSON.stringify({
-
-              type:
-                $('reportType').value,
-
-              title:
-                $('reportTitle').value,
-
-              content:
-                $('reportContent').value,
-
-              channel:
-                $('reportChannel').value,
-
-              postDate:
-                $('reportDate').value,
-
-              author:
-                $('reportAuthor').value
-            })
-        }
-      );
-
-
-    const data =
-      await res.json();
-
-
-    if (!res.ok) {
-
-      throw new Error(
-        data.error ||
-        'Galaxy 페이지 준비 실패'
-      );
-    }
-
-
-    const remoteUrl =
-      data.remoteUrl;
-
-
-    $('remoteFrame').src =
-      remoteUrl;
-
-
-    $('remoteOpen').href =
-      remoteUrl;
-
-
-    $('remoteCard')
-      .classList
-      .remove(
-        'hidden'
-      );
-
-
-    if (
-      data.pdfAttached
-    ) {
-
-      $('remoteStatus').innerHTML =
-        '<span class="success">PDF 자동첨부 완료 · Galaxy 실제 화면에 연결했습니다.</span>';
-
-    } else {
-
-      $('remoteStatus').innerHTML =
-        '<span class="error">Galaxy 화면은 열렸지만 PDF 자동첨부는 확인이 필요합니다.</span>';
-    }
-
-
-    $('prepareStatus').innerHTML =
-      '<span class="success">Galaxy 실제 페이지 준비 완료</span>';
-
-
-    setTimeout(
-      () => {
-
-        $('remoteCard')
-          .scrollIntoView({
-
-            behavior:
-              'smooth'
-          });
-
-      },
-      300
-    );
-
-
-  } catch (error) {
-
-
-    $('prepareStatus').innerHTML =
-      `<span class="error">${escapeHtml(error.message)}</span>`;
-
-
-    $('prepareBtn').disabled =
-      false;
-  }
 };
+
+
+
+$("copyBtn").onclick=()=>{
+
+
+navigator.clipboard.writeText(
+$("reportText").value
+);
+
+
+alert(
+"신고 내용이 복사되었습니다."
+);
+
+
+};
+
+
 
 </script>
 
