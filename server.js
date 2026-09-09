@@ -1,5 +1,5 @@
 /**
- * 악플/명예훼손 신고용 증거 수집 자동화 - MVP 서버 (v2)
+ * 악플/명예훼손 신고용 증거 수집 자동화 - MVP 서버 (v2.1)
  * 대상: 디시인사이드 (gall.dcinside.com) 우선 완성
  *
  * v2 변경점:
@@ -7,6 +7,12 @@
  *     깨끗한 전용 페이지에 다시 렌더링한 뒤 그 페이지만 PDF로 출력 (게시판 목록/광고 제거)
  *  2) 웹폰트(Noto Sans KR)를 직접 주입해 Render 서버에 한글 시스템 폰트가 없어도
  *     PDF에 한글이 정상 출력되도록 함
+ *
+ * v2.1 변경점 (버그 수정):
+ *  - page.setContent()의 waitUntil을 'networkidle0' -> 'domcontentloaded'로 변경
+ *    (본문 이미지가 리퍼러 차단 등으로 계속 재시도되면 networkidle0이 영원히 끝나지 않아
+ *     타임아웃 에러가 나던 문제 해결)
+ *  - 폰트 로딩 대기를 최대 5초로 제한 (document.fonts.ready가 안 끝나도 강제로 진행)
  *
  * 주의:
  *  - SITE_PROFILES의 선택자(특히 comments)는 예시이며, 실제 배포 전 반드시
@@ -123,6 +129,18 @@ async function injectPrintStyles(page) {
 }
 
 // ---------------------------------------------------------------------------
+// 폰트 로딩 대기 (최대 5초 - 안 끝나도 강제로 진행해서 타임아웃 방지)
+// ---------------------------------------------------------------------------
+async function waitForFontsWithTimeout(page, ms = 5000) {
+  await page.evaluate((timeoutMs) => {
+    return Promise.race([
+      document.fonts.ready,
+      new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }, ms);
+}
+
+// ---------------------------------------------------------------------------
 // 추출된 내용을 깨끗한 증거용 문서로 재구성 (한글 폰트 포함)
 // ---------------------------------------------------------------------------
 function buildEvidenceHtml({ url, title, author, date, contentHtml, commentsHtml, fallbackText }) {
@@ -209,9 +227,14 @@ app.post('/api/capture', async (req, res) => {
     if (profile && extracted.contentHtml) {
       // --- 프로필 매칭 성공: 깨끗한 증거 문서로 재구성해서 인쇄 ---
       const evidenceHtml = buildEvidenceHtml({ url, ...extracted });
-      await page.setContent(evidenceHtml, { waitUntil: 'networkidle0' });
-      // 웹폰트 로딩 완료까지 대기 (안 하면 폰트 적용 전에 인쇄되어 다시 깨질 수 있음)
-      await page.evaluate(() => document.fonts.ready);
+
+      // networkidle0 대신 domcontentloaded 사용:
+      // 본문 이미지가 리퍼러 차단 등으로 계속 재시도되면 networkidle0이 끝나지 않아
+      // 타임아웃 에러가 나던 문제를 해결
+      await page.setContent(evidenceHtml, { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      // 폰트 로딩은 최대 5초만 기다리고 안 되면 그냥 진행
+      await waitForFontsWithTimeout(page, 5000);
 
       pdfBuffer = await page.pdf({
         format: 'A4',
@@ -225,7 +248,7 @@ app.post('/api/capture', async (req, res) => {
       // --- 프로필 없음/매칭 실패: 기존 방식(전체 페이지 인쇄)으로 폴백 ---
       await page.addStyleTag({ url: KOREAN_FONT_LINK });
       await page.addStyleTag({ content: `* { font-family: 'Noto Sans KR', sans-serif !important; }` });
-      await page.evaluate(() => document.fonts.ready);
+      await waitForFontsWithTimeout(page, 5000);
       await injectPrintStyles(page);
 
       pdfBuffer = await page.pdf({
